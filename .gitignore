@@ -1,0 +1,15 @@
+build/
+__pycache__/
+*.pyc
+
+*.o
+*.obj
+*.a
+*.so
+*.out
+
+week*/results/raw/*.csv
+week*/results/plots/*.png
+
+.nsys-rep
+*.ncu-rep
