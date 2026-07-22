@@ -16,17 +16,36 @@ static void cpuVectorAdd(const float* a, const float* b, float* c, int n) {
     }
 }
 
+static void cpuSaxpy(const float* a, const float* b, float* c, float alpha, int n) {
+    for (int i = 0; i < n; ++i) {
+        c[i] = alpha * a[i] + b[i];
+    }
+}
+
 int main(int argc, char** argv) {
     // Parse command-line arguments.
     int n = 1 << 20;      // number of elements
     int blockSize = 256;  // threads per block
     int iterations = 100; // number of timing iterations
     int warmupIterations = 10; // number of warm-up iterations
+    const char* operation = "vector_add";
+    float alpha = 2.0f;
     if (argc > 1) n = atoi(argv[1]);
     if (argc > 2) blockSize = atoi(argv[2]);
     if (argc > 3) iterations = atoi(argv[3]);
+    if (argc > 4) operation = argv[4];
+    if (argc > 5) alpha = static_cast<float>(atof(argv[5]));
     if (n <= 0 || blockSize <= 0 || iterations <= 0) {
-        fprintf(stderr, "Usage: %s [num_elements] [block_size] [iterations]\n", argv[0]);
+        fprintf(
+            stderr,
+            "Usage: %s [num_elements] [block_size] [iterations] [vector_add|saxpy] [alpha_for_saxpy]\n",
+            argv[0]
+        );
+        return EXIT_FAILURE;
+    }
+    const bool useSaxpy = strcmp(operation, "saxpy") == 0;
+    if (!useSaxpy && strcmp(operation, "vector_add") != 0) {
+        fprintf(stderr, "Unsupported operation: %s (expected vector_add or saxpy)\n", operation);
         return EXIT_FAILURE;
     }
 
@@ -55,15 +74,21 @@ int main(int argc, char** argv) {
     }
 
     // Run CPU reference.
-    cpuVectorAdd(h_a, h_b, h_ref, n);
-
-    int gridSize = (n + blockSize - 1) / blockSize;
+    if (useSaxpy) {
+        cpuSaxpy(h_a, h_b, h_ref, alpha, n);
+    } else {
+        cpuVectorAdd(h_a, h_b, h_ref, n);
+    }
 
     // Run CUDA warm-up.
     CUDA_CHECK(cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice));
     for (int i = 0; i < warmupIterations; ++i) {
-        launch_vector_add(d_a, d_b, d_c, n, blockSize);
+        if (useSaxpy) {
+            launch_saxpy(d_a, d_b, d_c, alpha, n, blockSize);
+        } else {
+            launch_vector_add(d_a, d_b, d_c, n, blockSize);
+        }
     }
     CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -75,7 +100,11 @@ int main(int argc, char** argv) {
     kernelTimingsMs.reserve(iterations);
     for (int i = 0; i < iterations; ++i) {
         cudaTimer.start();
-        launch_vector_add(d_a, d_b, d_c, n, blockSize);
+        if (useSaxpy) {
+            launch_saxpy(d_a, d_b, d_c, alpha, n, blockSize);
+        } else {
+            launch_vector_add(d_a, d_b, d_c, n, blockSize);
+        }
         kernelTimingsMs.push_back(cudaTimer.stop());
     }
 
@@ -86,7 +115,11 @@ int main(int argc, char** argv) {
         cpuTimer.start();
         CUDA_CHECK(cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice));
-        launch_vector_add(d_a, d_b, d_c, n, blockSize);
+        if (useSaxpy) {
+            launch_saxpy(d_a, d_b, d_c, alpha, n, blockSize);
+        } else {
+            launch_vector_add(d_a, d_b, d_c, n, blockSize);
+        }
         CUDA_CHECK(cudaMemcpy(h_c, d_c, bytes, cudaMemcpyDeviceToHost));
         totalTimingsMs.push_back(cpuTimer.stop());
     }

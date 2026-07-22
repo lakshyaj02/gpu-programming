@@ -16,8 +16,7 @@
         }                                                                \
     } while (false)
 
-#define CUDA_CHECK_KERNEL()                                              \
-    do {                                                                 \
-        CUDA_CHECK(cudaGetLastError());                                  \
-        CUDA_CHECK(cudaDeviceSynchronize());                             \
-    } while (false)
+#define CUDA_CHECK_KERNEL() do {                 \
+    CUDA_CHECK(cudaGetLastError());              \
+    CUDA_CHECK(cudaDeviceSynchronize());         \
+} while (false)

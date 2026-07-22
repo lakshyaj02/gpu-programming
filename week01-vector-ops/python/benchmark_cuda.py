@@ -1,8 +1,13 @@
 import argparse
 import csv
+import json
+import os
+import platform
+import socket
 import statistics
 import subprocess
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -11,6 +16,9 @@ DEFAULT_EXECUTABLE = PROJECT_ROOT / "build" / "week01_benchmark"
 DEFAULT_CSV = PROJECT_ROOT / "week01-vector-ops" / "results" / "raw" / "cuda_timings.csv"
 DEFAULT_PYTORCH_CSV = (
     PROJECT_ROOT / "week01-vector-ops" / "results" / "raw" / "pytorch_timings.csv"
+)
+DEFAULT_METADATA_JSON = (
+    PROJECT_ROOT / "week01-vector-ops" / "results" / "raw" / "run_metadata.json"
 )
 DEFAULT_PLOT_DIR = PROJECT_ROOT / "week01-vector-ops" / "results" / "plots"
 FIELDNAMES = [
@@ -24,7 +32,14 @@ FIELDNAMES = [
 
 
 def run_benchmark(executable, n, block_size, iterations):
-    command = [str(executable), str(n), str(block_size), str(iterations)]
+    command = [
+        str(executable),
+        str(n),
+        str(block_size),
+        str(iterations),
+        run_benchmark.operation,
+        str(run_benchmark.alpha),
+    ]
     result = subprocess.run(command, check=True, capture_output=True, text=True)
     rows = []
 
@@ -51,6 +66,10 @@ def run_benchmark(executable, n, block_size, iterations):
             f"received {len(rows)}"
         )
     return rows
+
+
+run_benchmark.operation = "vector_add"
+run_benchmark.alpha = 2.0
 
 
 def summarize(rows):
@@ -81,7 +100,86 @@ def write_csv(rows, output_path):
         writer.writerows(rows)
 
 
-def run_pytorch_benchmarks(sizes, iterations, warmup):
+def read_command_output(command):
+    try:
+        result = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+    output = result.stdout.strip()
+    return output if output else None
+
+
+def collect_metadata(args):
+    metadata = {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "hostname": socket.gethostname(),
+        "platform": platform.platform(),
+        "python_version": platform.python_version(),
+        "operation": args.op,
+        "alpha": args.alpha,
+        "iterations": args.iterations,
+        "warmup": args.warmup,
+        "sizes": args.sizes,
+        "block_sizes": args.block_sizes,
+        "executable": str(args.executable),
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+    }
+
+    nvcc_version = read_command_output(["nvcc", "--version"])
+    if nvcc_version is not None:
+        metadata["nvcc_version"] = nvcc_version
+
+    nvidia_smi = read_command_output([
+        "nvidia-smi",
+        "--query-gpu=name,driver_version,memory.total",
+        "--format=csv,noheader",
+    ])
+    if nvidia_smi is not None:
+        metadata["gpus"] = [line.strip() for line in nvidia_smi.splitlines() if line.strip()]
+
+    return metadata
+
+
+def enrich_with_pytorch_metadata(metadata):
+    try:
+        import torch
+    except ModuleNotFoundError:
+        metadata["pytorch"] = {"available": False}
+        return
+
+    details = {
+        "available": True,
+        "version": torch.__version__,
+        "cuda_version": torch.version.cuda,
+        "cuda_available": torch.cuda.is_available(),
+    }
+
+    if torch.cuda.is_available():
+        device_index = torch.cuda.current_device()
+        props = torch.cuda.get_device_properties(device_index)
+        details["device"] = {
+            "index": device_index,
+            "name": props.name,
+            "total_memory_bytes": props.total_memory,
+            "compute_capability": f"{props.major}.{props.minor}",
+        }
+
+    metadata["pytorch"] = details
+
+
+def write_metadata(metadata, output_path):
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as metadata_file:
+        json.dump(metadata, metadata_file, indent=2, sort_keys=True)
+        metadata_file.write("\n")
+
+
+def run_pytorch_benchmarks(sizes, iterations, warmup, operation, alpha):
     try:
         import benchmark_pytorch
     except ModuleNotFoundError as error:
@@ -99,7 +197,7 @@ def run_pytorch_benchmarks(sizes, iterations, warmup):
     device = benchmark_pytorch.torch.device("cuda")
     for n in sizes:
         timings_ms, correct = benchmark_pytorch.benchmark(
-            n, iterations, warmup, device
+            n, iterations, warmup, device, operation=operation, alpha=alpha
         )
         rows.extend(
             {
@@ -146,7 +244,7 @@ def write_pytorch_csv(rows, output_path):
         writer.writerows(rows)
 
 
-def create_plots(summaries, plot_dir):
+def create_plots(summaries, plot_dir, operation):
     try:
         import matplotlib.pyplot as plt
     except ImportError:
@@ -169,11 +267,11 @@ def create_plots(summaries, plot_dir):
     ax.set_yscale("log")
     ax.set_xlabel("Number of elements")
     ax.set_ylabel("Kernel time (ms)")
-    ax.set_title("CUDA Vector Add Latency")
+    ax.set_title(f"CUDA {operation} Latency")
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(plot_dir / "cuda_latency.png", dpi=150)
+    fig.savefig(plot_dir / f"cuda_{operation}_latency.png", dpi=150)
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -188,15 +286,15 @@ def create_plots(summaries, plot_dir):
     ax.set_xscale("log", base=2)
     ax.set_xlabel("Number of elements")
     ax.set_ylabel("Effective bandwidth (GB/s)")
-    ax.set_title("CUDA Vector Add Effective Bandwidth")
+    ax.set_title(f"CUDA {operation} Effective Bandwidth")
     ax.grid(True, which="both", linestyle="--", alpha=0.4)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(plot_dir / "cuda_bandwidth.png", dpi=150)
+    fig.savefig(plot_dir / f"cuda_{operation}_bandwidth.png", dpi=150)
     plt.close(fig)
 
 
-def create_comparison_plots(cuda_summaries, pytorch_summaries, plot_dir):
+def create_comparison_plots(cuda_summaries, pytorch_summaries, plot_dir, operation):
     try:
         import matplotlib.pyplot as plt
     except ImportError:
@@ -206,11 +304,11 @@ def create_comparison_plots(cuda_summaries, pytorch_summaries, plot_dir):
     block_sizes = sorted({row["block_size"] for row in cuda_summaries})
 
     for metric, ylabel, filename, log_y in [
-        ("mean_ms", "Kernel time (ms)", "comparison_latency.png", True),
+        ("mean_ms", "Kernel time (ms)", f"comparison_{operation}_latency.png", True),
         (
             "bandwidth_gbps",
             "Effective bandwidth (GB/s)",
-            "comparison_bandwidth.png",
+            f"comparison_{operation}_bandwidth.png",
             False,
         ),
     ]:
@@ -237,7 +335,7 @@ def create_comparison_plots(cuda_summaries, pytorch_summaries, plot_dir):
             ax.set_yscale("log")
         ax.set_xlabel("Number of elements")
         ax.set_ylabel(ylabel)
-        ax.set_title(f"Native CUDA vs PyTorch {ylabel}")
+        ax.set_title(f"Native CUDA vs PyTorch {operation} {ylabel}")
         ax.grid(True, which="both", linestyle="--", alpha=0.4)
         ax.legend()
         fig.tight_layout()
@@ -255,8 +353,11 @@ def main():
     parser.add_argument("--block-sizes", type=int, nargs="+", default=[128, 256, 512])
     parser.add_argument("--csv", type=Path, default=DEFAULT_CSV)
     parser.add_argument("--pytorch-csv", type=Path, default=DEFAULT_PYTORCH_CSV)
+    parser.add_argument("--metadata-json", type=Path, default=DEFAULT_METADATA_JSON)
     parser.add_argument("--plot-dir", type=Path, default=DEFAULT_PLOT_DIR)
     parser.add_argument("--warmup", type=int, default=10)
+    parser.add_argument("--op", choices=["vector_add", "saxpy"], default="vector_add")
+    parser.add_argument("--alpha", type=float, default=2.0)
     parser.add_argument("--skip-pytorch", action="store_true")
     args = parser.parse_args()
 
@@ -266,6 +367,20 @@ def main():
         parser.error("block sizes must be positive")
     if not args.executable.is_file():
         parser.error(f"benchmark executable not found: {args.executable}")
+
+    run_benchmark.operation = args.op
+    run_benchmark.alpha = args.alpha
+
+    cuda_csv_path = args.csv.with_name(
+        f"{args.csv.stem}_{args.op}{args.csv.suffix}"
+    )
+    pytorch_csv_path = args.pytorch_csv.with_name(
+        f"{args.pytorch_csv.stem}_{args.op}{args.pytorch_csv.suffix}"
+    )
+    metadata_json_path = args.metadata_json.with_name(
+        f"{args.metadata_json.stem}_{args.op}{args.metadata_json.suffix}"
+    )
+    metadata = collect_metadata(args)
 
     rows = []
     for n in args.sizes:
@@ -279,25 +394,34 @@ def main():
             )
 
     failed = [row for row in rows if row["correct"] != "PASS"]
-    write_csv(rows, args.csv)
-    create_plots(summarize(rows), args.plot_dir)
-    print(f"Wrote {args.csv}")
+    write_csv(rows, cuda_csv_path)
+    create_plots(summarize(rows), args.plot_dir, args.op)
+    metadata["cuda_samples"] = len(rows)
+    metadata["cuda_csv"] = str(cuda_csv_path)
+    print(f"Wrote {cuda_csv_path}")
     print(f"Wrote plots to {args.plot_dir}")
 
     if not args.skip_pytorch:
         try:
             pytorch_rows = run_pytorch_benchmarks(
-                args.sizes, args.iterations, args.warmup
+                args.sizes, args.iterations, args.warmup, args.op, args.alpha
             )
         except RuntimeError as error:
             parser.error(str(error))
-        write_pytorch_csv(pytorch_rows, args.pytorch_csv)
+        write_pytorch_csv(pytorch_rows, pytorch_csv_path)
         create_comparison_plots(
-            summarize(rows), summarize_pytorch(pytorch_rows), args.plot_dir
+            summarize(rows), summarize_pytorch(pytorch_rows), args.plot_dir, args.op
         )
-        print(f"Wrote {args.pytorch_csv}")
+        metadata["pytorch_samples"] = len(pytorch_rows)
+        metadata["pytorch_csv"] = str(pytorch_csv_path)
+        print(f"Wrote {pytorch_csv_path}")
         print(f"Wrote comparison plots to {args.plot_dir}")
         failed.extend(row for row in pytorch_rows if row["correct"] != "PASS")
+
+    enrich_with_pytorch_metadata(metadata)
+    metadata["correctness_failures"] = len(failed)
+    write_metadata(metadata, metadata_json_path)
+    print(f"Wrote {metadata_json_path}")
 
     if failed:
         raise SystemExit(f"Correctness failed for {len(failed)} timing samples")

@@ -26,6 +26,7 @@ The generated artifacts are:
 
 - `results/raw/cuda_timings.csv`
 - `results/raw/pytorch_timings.csv`
+- `results/raw/run_metadata_*.json` (GPU model, driver/toolkit versions, PyTorch/CUDA versions, host and run parameters)
 - `results/plots/cuda_latency.png`
 - `results/plots/cuda_bandwidth.png`
 - `results/plots/comparison_latency.png`
@@ -35,6 +36,13 @@ To run a smaller benchmark or choose specific launch configurations:
 
 ```bash
 ./scripts/run_week01.sh --sizes 1048576 4194304 --block-sizes 128 256 --iterations 50
+```
+
+To run both operations back-to-back with automatic output labeling (`*_vector_add.*`
+and `*_saxpy.*`), use:
+
+```bash
+./scripts/run_week01.sh --all-ops --iterations 50
 ```
 
 Use `--skip-pytorch` to publish only the native CUDA results when PyTorch is

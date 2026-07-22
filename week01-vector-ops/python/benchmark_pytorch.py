@@ -5,28 +5,40 @@ import statistics
 import torch
 
 
-def benchmark(n, iterations, warmup, device):
+def benchmark(n, iterations, warmup, device, operation="vector_add", alpha=2.0):
     a = torch.rand(n, device=device)
     b = torch.rand(n, device=device)
 
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
 
+    if operation not in {"vector_add", "saxpy"}:
+        raise ValueError(f"Unsupported operation: {operation}")
+
     with torch.no_grad():
         for _ in range(warmup):
-            c = a + b
+            if operation == "saxpy":
+                c = alpha * a + b
+            else:
+                c = a + b
 
         torch.cuda.synchronize()
         timings_ms = []
         for _ in range(iterations):
             start.record()
-            c = a + b
+            if operation == "saxpy":
+                c = alpha * a + b
+            else:
+                c = a + b
             end.record()
             end.synchronize()
             timings_ms.append(start.elapsed_time(end))
 
     # Correctness check against a reference.
-    ref = a + b
+    if operation == "saxpy":
+        ref = alpha * a + b
+    else:
+        ref = a + b
     correct = torch.allclose(c, ref, atol=1e-5)
 
     return timings_ms, correct
@@ -36,6 +48,8 @@ def main():
     parser = argparse.ArgumentParser(description="PyTorch vector-add benchmark")
     parser.add_argument("--iterations", type=int, default=100)
     parser.add_argument("--warmup", type=int, default=10)
+    parser.add_argument("--op", choices=["vector_add", "saxpy"], default="vector_add")
+    parser.add_argument("--alpha", type=float, default=2.0)
     parser.add_argument(
         "--sizes",
         type=int,
@@ -53,7 +67,14 @@ def main():
     rows = []
 
     for n in args.sizes:
-        timings_ms, correct = benchmark(n, args.iterations, args.warmup, device)
+        timings_ms, correct = benchmark(
+            n,
+            args.iterations,
+            args.warmup,
+            device,
+            operation=args.op,
+            alpha=args.alpha,
+        )
         for iteration, kernel_ms in enumerate(timings_ms):
             rows.append(
                 {
