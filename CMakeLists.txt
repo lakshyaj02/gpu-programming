@@ -37,3 +37,31 @@ set_target_properties(
     PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
 )
+
+add_executable(
+    week02_benchmark
+    week02-memory-tiling/src/main.cu
+    week02-memory-tiling/src/memory_access.cu
+    week02-memory-tiling/src/transpose.cu
+    week02-memory-tiling/src/matmul.cu
+)
+
+target_include_directories(
+    week02_benchmark
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/week02-memory-tiling/include
+)
+
+target_compile_options(
+    week02_benchmark
+    PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:-O3>
+    $<$<COMPILE_LANGUAGE:CUDA>:-O3>
+)
+
+set_target_properties(
+    week02_benchmark
+    PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+)
