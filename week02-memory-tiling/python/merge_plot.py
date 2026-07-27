@@ -154,12 +154,16 @@ def make_labeled_plot(
 
     for series in series_names:
         by_label = {row[x_key]: row for row in rows if row[label_key] == series}
-        y_latency = [parse_float(by_label[label][latency_key]) for label in x_labels]
-        y_perf = [parse_float(by_label[label][throughput_key]) for label in x_labels]
+        present_labels = [label for label in x_labels if label in by_label]
+        if not present_labels:
+            continue
+        x_idx = [x_labels.index(label) for label in present_labels]
+        y_latency = [parse_float(by_label[label][latency_key]) for label in present_labels]
+        y_perf = [parse_float(by_label[label][throughput_key]) for label in present_labels]
         marker = "s" if series == "torch" else "o"
         display = "PyTorch" if series == "torch" else f"CUDA ({series})"
-        ax1.plot(x_pos, y_latency, marker=marker, label=display)
-        ax2.plot(x_pos, y_perf, marker=marker, label=display)
+        ax1.plot(x_idx, y_latency, marker=marker, label=display)
+        ax2.plot(x_idx, y_perf, marker=marker, label=display)
 
     ax1.set_xticks(x_pos, x_labels, rotation=20)
     ax1.set_xlabel("Matrix shape")

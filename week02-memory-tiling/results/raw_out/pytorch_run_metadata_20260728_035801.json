@@ -1,0 +1,22 @@
+{
+  "cuda_available": true,
+  "cuda_version": "13.0",
+  "device": "NVIDIA GB200",
+  "hostname": "xwopd-svbhp0176",
+  "iterations": -1,
+  "outputs": {
+    "copy_csv": "week02-memory-tiling/results/raw_out/pytorch_timings_copy_20260728_035801.csv",
+    "matmul_csv": "week02-memory-tiling/results/raw_out/pytorch_timings_matmul_20260728_035801.csv",
+    "transpose_csv": "week02-memory-tiling/results/raw_out/pytorch_timings_transpose_20260728_035801.csv"
+  },
+  "platform": "Linux-6.17.0-1008-nvidia-64k-aarch64-with-glibc2.39",
+  "python_version": "3.12.3",
+  "pytorch_version": "2.13.0+cu130",
+  "rows": {
+    "copy": 84,
+    "matmul": 9,
+    "transpose": 9
+  },
+  "timestamp_utc": "2026-07-27T18:58:15.473637+00:00",
+  "warmup": 10
+}

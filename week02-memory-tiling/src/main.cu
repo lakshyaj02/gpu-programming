@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <tuple>
 #include <vector>
 
 #include "cuda_check.h"
@@ -81,6 +82,7 @@ int main(int argc, char **argv) {
         1u << 26    // ~256 MiB
     };
     const std::vector<std::size_t> strides = {1, 2, 4, 8, 16, 32, 64};
+    constexpr std::size_t copyBlockSize = 256;
 
     cudaStream_t stream = nullptr;
     CUDA_CHECK(cudaStreamCreate(&stream));
@@ -121,9 +123,9 @@ int main(int argc, char **argv) {
 
             for (int w = 0; w < warmupIterations; ++w) {
                 if (isContiguous) {
-                    launch_contiguous_copy_kernel(d_out, d_in, size, stream);
+                    launch_contiguous_copy_kernel(d_out, d_in, size, copyBlockSize, stream);
                 } else {
-                    launch_strided_copy_kernel(d_out, d_in, size, stride, stream);
+                    launch_strided_copy_kernel(d_out, d_in, size, stride, copyBlockSize, stream);
                 }
             }
             CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -136,9 +138,9 @@ int main(int argc, char **argv) {
                 for (int it = 0; it < currentIterations; ++it) {
                     timer.start(stream);
                     if (isContiguous) {
-                        launch_contiguous_copy_kernel(d_out, d_in, size, stream);
+                        launch_contiguous_copy_kernel(d_out, d_in, size, copyBlockSize, stream);
                     } else {
-                        launch_strided_copy_kernel(d_out, d_in, size, stride, stream);
+                        launch_strided_copy_kernel(d_out, d_in, size, stride, copyBlockSize, stream);
                     }
                     kernelMs.push_back(timer.stop(stream));
                 }
@@ -189,10 +191,15 @@ int main(int argc, char **argv) {
         {1024, 1024},
         {2048, 1024},
         {4096, 2048},
+        {1536, 1000},
+        {3072, 777},
     };
     constexpr std::size_t transposeBlockSize = 16;
-    constexpr std::size_t transposeTileSize = 32;
-    constexpr std::size_t transposeBlockRows = 8;
+    const std::vector<std::pair<std::size_t, std::size_t>> transposeTileConfigs = {
+        {8, 8},
+        {16, 8},
+        {32, 8},
+    };
 
     for (const auto &dims : transposeSizes) {
         const std::size_t rows = dims.first;
@@ -221,13 +228,55 @@ int main(int argc, char **argv) {
         CUDA_CHECK(cudaMemcpyAsync(d_in, h_in, bytes, cudaMemcpyHostToDevice, stream));
         CUDA_CHECK(cudaStreamSynchronize(stream));
 
-        for (const bool tiled : {false, true}) {
+        for (int w = 0; w < warmupIterations; ++w) {
+            launch_transpose_kernel(d_out, d_in, rows, cols, transposeBlockSize, stream);
+        }
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+
+        for (int currentIterations : iterationCounts) {
+            CudaTimer timer;
+            std::vector<float> kernelMs;
+            kernelMs.reserve(static_cast<std::size_t>(currentIterations));
+
+            for (int it = 0; it < currentIterations; ++it) {
+                timer.start(stream);
+                launch_transpose_kernel(d_out, d_in, rows, cols, transposeBlockSize, stream);
+                kernelMs.push_back(timer.stop(stream));
+            }
+
+            CUDA_CHECK(cudaMemcpyAsync(h_out, d_out, bytes, cudaMemcpyDeviceToHost, stream));
+            CUDA_CHECK(cudaStreamSynchronize(stream));
+
+            const bool correct = almostEqual(h_out, h_ref, elements, 1e-6f);
+
+            float sumMs = 0.0f;
+            float minMs = kernelMs.front();
+            for (float ms : kernelMs) {
+                sumMs += ms;
+                minMs = std::min(minMs, ms);
+            }
+            const float avgMs = sumMs / static_cast<float>(kernelMs.size());
+            const double bytesMoved = 2.0 * static_cast<double>(bytes);
+            const double effectiveGbps = (bytesMoved / (static_cast<double>(avgMs) * 1e-3)) / 1e9;
+
+            std::printf("naive_b%zu,%zu,%zu,%zu,%d,%.6f,%.6f,%.3f,%s\n",
+                        transposeBlockSize,
+                        rows,
+                        cols,
+                        bytes,
+                        currentIterations,
+                        avgMs,
+                        minMs,
+                        effectiveGbps,
+                        correct ? "PASS" : "FAIL");
+        }
+
+        for (const auto &tileConfig : transposeTileConfigs) {
+            const std::size_t tileSize = tileConfig.first;
+            const std::size_t blockRows = tileConfig.second;
+
             for (int w = 0; w < warmupIterations; ++w) {
-                if (tiled) {
-                    launch_transpose_tiled_kernel(d_out, d_in, rows, cols, transposeBlockRows, transposeTileSize, stream);
-                } else {
-                    launch_transpose_kernel(d_out, d_in, rows, cols, transposeBlockSize, stream);
-                }
+                launch_transpose_tiled_kernel(d_out, d_in, rows, cols, blockRows, tileSize, stream);
             }
             CUDA_CHECK(cudaStreamSynchronize(stream));
 
@@ -238,11 +287,7 @@ int main(int argc, char **argv) {
 
                 for (int it = 0; it < currentIterations; ++it) {
                     timer.start(stream);
-                    if (tiled) {
-                        launch_transpose_tiled_kernel(d_out, d_in, rows, cols, transposeBlockRows, transposeTileSize, stream);
-                    } else {
-                        launch_transpose_kernel(d_out, d_in, rows, cols, transposeBlockSize, stream);
-                    }
+                    launch_transpose_tiled_kernel(d_out, d_in, rows, cols, blockRows, tileSize, stream);
                     kernelMs.push_back(timer.stop(stream));
                 }
 
@@ -261,8 +306,9 @@ int main(int argc, char **argv) {
                 const double bytesMoved = 2.0 * static_cast<double>(bytes);
                 const double effectiveGbps = (bytesMoved / (static_cast<double>(avgMs) * 1e-3)) / 1e9;
 
-                std::printf("%s,%zu,%zu,%zu,%d,%.6f,%.6f,%.3f,%s\n",
-                            tiled ? "tiled" : "naive",
+                std::printf("tiled_t%zu_br%zu,%zu,%zu,%zu,%d,%.6f,%.6f,%.3f,%s\n",
+                            tileSize,
+                            blockRows,
                             rows,
                             cols,
                             bytes,
@@ -282,13 +328,19 @@ int main(int argc, char **argv) {
     }
 
     std::puts("matmul_variant,M,N,K,iterations,avg_kernel_ms,min_kernel_ms,gflops,correct");
-    const std::vector<std::size_t> matmulSizes = {256, 512, 768};
-    constexpr std::size_t matmulBlockSize = 16;
+    const std::vector<std::tuple<std::size_t, std::size_t, std::size_t>> matmulSizes = {
+        {256, 256, 256},
+        {512, 512, 512},
+        {768, 768, 768},
+        {384, 1024, 160},
+        {511, 257, 769},
+    };
+    const std::vector<std::size_t> matmulTileSizes = {8, 16, 32};
 
-    for (const std::size_t n : matmulSizes) {
-        const std::size_t M = n;
-        const std::size_t N = n;
-        const std::size_t K = n;
+    for (const auto &dims : matmulSizes) {
+        const std::size_t M = std::get<0>(dims);
+        const std::size_t N = std::get<1>(dims);
+        const std::size_t K = std::get<2>(dims);
         const std::size_t aElems = M * K;
         const std::size_t bElems = K * N;
         const std::size_t cElems = M * N;
@@ -301,7 +353,7 @@ int main(int argc, char **argv) {
         float *h_c = static_cast<float *>(std::malloc(cBytes));
         float *h_ref = static_cast<float *>(std::malloc(cBytes));
         if (!h_a || !h_b || !h_c || !h_ref) {
-            std::fprintf(stderr, "Host allocation failed for matmul size=%zu\n", n);
+            std::fprintf(stderr, "Host allocation failed for matmul M=%zu N=%zu K=%zu\n", M, N, K);
             std::free(h_a);
             std::free(h_b);
             std::free(h_c);
@@ -324,14 +376,54 @@ int main(int argc, char **argv) {
         CUDA_CHECK(cudaMemcpyAsync(d_b, h_b, bBytes, cudaMemcpyHostToDevice, stream));
         CUDA_CHECK(cudaStreamSynchronize(stream));
 
-        for (const bool tiled : {false, true}) {
+        for (int w = 0; w < warmupIterations; ++w) {
+            CUDA_CHECK(cudaMemsetAsync(d_c, 0, cBytes, stream));
+            launch_naive_matrix_multiply_kernel(d_c, d_a, d_b, M, N, K, 16, stream);
+        }
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+
+        for (int currentIterations : iterationCounts) {
+            CudaTimer timer;
+            std::vector<float> kernelMs;
+            kernelMs.reserve(static_cast<std::size_t>(currentIterations));
+
+            for (int it = 0; it < currentIterations; ++it) {
+                CUDA_CHECK(cudaMemsetAsync(d_c, 0, cBytes, stream));
+                timer.start(stream);
+                launch_naive_matrix_multiply_kernel(d_c, d_a, d_b, M, N, K, 16, stream);
+                kernelMs.push_back(timer.stop(stream));
+            }
+
+            CUDA_CHECK(cudaMemcpyAsync(h_c, d_c, cBytes, cudaMemcpyDeviceToHost, stream));
+            CUDA_CHECK(cudaStreamSynchronize(stream));
+
+            const bool correct = almostEqual(h_c, h_ref, cElems, 1e-2f);
+
+            float sumMs = 0.0f;
+            float minMs = kernelMs.front();
+            for (float ms : kernelMs) {
+                sumMs += ms;
+                minMs = std::min(minMs, ms);
+            }
+            const float avgMs = sumMs / static_cast<float>(kernelMs.size());
+            const double flops = 2.0 * static_cast<double>(M) * static_cast<double>(N) * static_cast<double>(K);
+            const double gflops = flops / (static_cast<double>(avgMs) * 1e6);
+
+            std::printf("naive_b16,%zu,%zu,%zu,%d,%.6f,%.6f,%.3f,%s\n",
+                        M,
+                        N,
+                        K,
+                        currentIterations,
+                        avgMs,
+                        minMs,
+                        gflops,
+                        correct ? "PASS" : "FAIL");
+        }
+
+        for (const std::size_t tileSize : matmulTileSizes) {
             for (int w = 0; w < warmupIterations; ++w) {
                 CUDA_CHECK(cudaMemsetAsync(d_c, 0, cBytes, stream));
-                if (tiled) {
-                    launch_tiled_matrix_multiply_kernel(d_c, d_a, d_b, M, N, K, matmulBlockSize, stream);
-                } else {
-                    launch_naive_matrix_multiply_kernel(d_c, d_a, d_b, M, N, K, matmulBlockSize, stream);
-                }
+                launch_tiled_matrix_multiply_kernel(d_c, d_a, d_b, M, N, K, tileSize, stream);
             }
             CUDA_CHECK(cudaStreamSynchronize(stream));
 
@@ -343,11 +435,7 @@ int main(int argc, char **argv) {
                 for (int it = 0; it < currentIterations; ++it) {
                     CUDA_CHECK(cudaMemsetAsync(d_c, 0, cBytes, stream));
                     timer.start(stream);
-                    if (tiled) {
-                        launch_tiled_matrix_multiply_kernel(d_c, d_a, d_b, M, N, K, matmulBlockSize, stream);
-                    } else {
-                        launch_naive_matrix_multiply_kernel(d_c, d_a, d_b, M, N, K, matmulBlockSize, stream);
-                    }
+                    launch_tiled_matrix_multiply_kernel(d_c, d_a, d_b, M, N, K, tileSize, stream);
                     kernelMs.push_back(timer.stop(stream));
                 }
 
@@ -366,8 +454,8 @@ int main(int argc, char **argv) {
                 const double flops = 2.0 * static_cast<double>(M) * static_cast<double>(N) * static_cast<double>(K);
                 const double gflops = flops / (static_cast<double>(avgMs) * 1e6);
 
-                std::printf("%s,%zu,%zu,%zu,%d,%.6f,%.6f,%.3f,%s\n",
-                            tiled ? "tiled" : "naive",
+                std::printf("tiled_t%zu,%zu,%zu,%zu,%d,%.6f,%.6f,%.3f,%s\n",
+                            tileSize,
                             M,
                             N,
                             K,

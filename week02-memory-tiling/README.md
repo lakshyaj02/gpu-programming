@@ -24,9 +24,34 @@ cmake --build build -j
 - `src/`: CUDA kernels and benchmark drivers
 - `python/`: optional plotting/comparison scripts
 - `results/raw_out/`: raw benchmark CSV outputs
-- `results/plots_normal/`: clean plots for reports
-- `results/plots_ragged/`: diagnostic/debug plots
+- `results/plots/`: generated comparison plots
 - `results/observations.md`: final write-up
+
+## Current results snapshot
+
+Snapshot source: timestamp `20260728_035801` from `results/raw_out/`.
+
+### Memory access (CUDA)
+
+- Contiguous bandwidth (size=67108864, stride=1, iters=100): **2867.228 GB/s**
+- Strided bandwidth (size=67108864, stride=64, iters=100): **447.559 GB/s**
+- Relative drop (stride 64 vs contiguous): about **6.41x lower** bandwidth
+
+### Matrix transpose (CUDA, disproportionate shape)
+
+For `rows=3072`, `cols=777`, `iters=100`:
+
+- `naive_b16`: `0.015197 ms`, `1256.524 GB/s`
+- `tiled_t32_br8`: `0.009638 ms`, `1981.261 GB/s`
+- Speedup: about **1.58x** in favor of tiled transpose
+
+### Matrix multiplication (CUDA, ragged shape)
+
+For `M=511`, `N=257`, `K=769`, `iters=100`:
+
+- `naive_b16`: `0.109888 ms`, `1838.056 GFLOP/s`
+- `tiled_t8`: `0.074265 ms`, `2719.733 GFLOP/s`
+- Speedup: about **1.48x** in favor of tiled matmul
 
 ## Experiments
 
@@ -45,16 +70,6 @@ Record:
 - strided bandwidth (GB/s)
 - trend vs stride size
 
-Suggested metrics table:
-
-| stride | kernel_ms | bytes_moved | effective_gbps |
-|---|---:|---:|---:|
-| 1 |  |  |  |
-| 2 |  |  |  |
-| 4 |  |  |  |
-| 8 |  |  |  |
-| ... |  |  |  |
-
 ### 2) Matrix transpose
 
 Goal: compare naive transpose with a coalesced/shared-memory transpose.
@@ -70,13 +85,6 @@ Record:
 - coalesced/tiled time (ms)
 - effective bandwidth (GB/s)
 - speedup factor
-
-Suggested summary:
-
-| version | kernel_ms | effective_gbps | speedup |
-|---|---:|---:|---:|
-| naive |  |  | 1.00 |
-| tiled/coalesced |  |  |  |
 
 ### 3) Matrix multiplication
 
@@ -95,14 +103,6 @@ Record:
 - tiled CUDA time (ms)
 - speedup vs naive and vs CPU
 - max absolute error (or relative error) vs CPU reference
-
-Suggested summary:
-
-| version | time_ms | speedup_vs_cpu | speedup_vs_naive | max_abs_error |
-|---|---:|---:|---:|---:|
-| cpu_reference |  | 1.00 | - | - |
-| cuda_naive |  |  | 1.00 |  |
-| cuda_tiled |  |  |  |  |
 
 ## Reproducibility checklist
 
