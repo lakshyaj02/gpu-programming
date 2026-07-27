@@ -1,4 +1,5 @@
 #include "memory_tiling.cuh"
+#include "cuda_check.h"
 
 namespace {
 constexpr int kTransposeTileDim = 32;

@@ -1,4 +1,5 @@
 #include "memory_tiling.cuh"
+#include "cuda_check.h"
 
 __global__ void contiguous_copy_kernel(float *output, const float *data, std::size_t size){
     const std::size_t idx = blockIdx.x*blockDim.x + threadIdx.x;

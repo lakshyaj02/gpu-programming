@@ -5,7 +5,24 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root"
 
-for command in cmake nvcc; do
+skip_pytorch=false
+ran_pytorch=false
+raw_args=()
+for arg in "$@"; do
+	if [[ "$arg" == "--skip-pytorch" ]]; then
+		skip_pytorch=true
+		continue
+	fi
+	raw_args+=("$arg")
+done
+
+if [[ "${#raw_args[@]}" -ge 2 && "${raw_args[0]}" =~ ^[0-9]+$ && "${raw_args[1]}" =~ ^[0-9]+$ ]]; then
+	raw_args=(--iterations "${raw_args[0]}" --warmup "${raw_args[1]}" "${raw_args[@]:2}")
+elif [[ "${#raw_args[@]}" -ge 1 && "${raw_args[0]}" =~ ^[0-9]+$ ]]; then
+	raw_args=(--iterations "${raw_args[0]}" "${raw_args[@]:1}")
+fi
+
+for command in cmake nvcc python3; do
 	if ! command -v "$command" >/dev/null 2>&1; then
 		printf 'error: required command not found: %s\n' "$command" >&2
 		exit 1
@@ -16,13 +33,36 @@ results_dir="week02-memory-tiling/results/raw_out"
 mkdir -p "$results_dir"
 
 timestamp="$(date +%Y%m%d_%H%M%S)"
-out_file="$results_dir/week02_benchmark_${timestamp}.csv"
 
 printf '%s\n' 'Configuring and building week02_benchmark...'
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j --target week02_benchmark
 
-printf 'Running week02_benchmark; output will be saved to %s\n' "$out_file"
-./build/week02_benchmark "$@" | tee "$out_file"
+printf '%s\n' 'Running native CUDA benchmark harness...'
+python3 week02-memory-tiling/python/benchmark_cuda.py \
+	--timestamp "$timestamp" \
+	--output-dir "$results_dir" \
+	"${raw_args[@]}"
 
-printf 'Done. Saved benchmark output to %s\n' "$out_file"
+if [[ "$skip_pytorch" == false ]]; then
+	if python3 -c 'import torch; raise SystemExit(0 if torch.cuda.is_available() else 1)'; then
+		printf '%s\n' 'Running PyTorch benchmark harness...'
+		python3 week02-memory-tiling/python/benchmark_pytorch.py \
+			--timestamp "$timestamp" \
+			--output-dir "$results_dir" \
+			"${raw_args[@]}"
+		ran_pytorch=true
+	else
+		printf '%s\n' 'warning: PyTorch CUDA not available; skipping PyTorch benchmark'
+	fi
+fi
+
+if [[ "$ran_pytorch" == true ]]; then
+	printf '%s\n' 'Generating merged CUDA/PyTorch comparison plots...'
+	python3 week02-memory-tiling/python/merge_plot.py \
+		--raw-dir "$results_dir" \
+		--plots-dir "week02-memory-tiling/results/plots" \
+		--timestamp "$timestamp"
+fi
+
+printf 'Done. Week 2 benchmark artifacts written under %s\n' "$results_dir"
