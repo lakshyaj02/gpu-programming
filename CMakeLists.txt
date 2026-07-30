@@ -65,3 +65,32 @@ set_target_properties(
     PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
 )
+
+add_executable(
+    week03_benchmark
+    week03-reductions/src/main.cu
+    week03-reductions/src/reduction_atomic.cu
+    week03-reductions/src/reduction_shared.cu
+    week03-reductions/src/reduction_warp.cu
+    week03-reductions/src/reduction_hierarchical.cu
+)
+
+target_include_directories(
+    week03_benchmark
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/week03-reductions/include
+)
+
+target_compile_options(
+    week03_benchmark
+    PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:-O3>
+    $<$<COMPILE_LANGUAGE:CUDA>:-O3>
+)
+
+set_target_properties(
+    week03_benchmark
+    PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+)
