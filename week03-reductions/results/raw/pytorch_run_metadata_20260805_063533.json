@@ -1,0 +1,11 @@
+{
+  "timestamp": "20260805_063533",
+  "hostname": "xwopd-svbhp0176",
+  "platform": "Linux-6.17.0-1008-nvidia-64k-aarch64-with-glibc2.39",
+  "python": "3.12.3",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "gpu_name": "NVIDIA GB200",
+  "gpu_total_memory_gb": 184.0,
+  "gpu_sm_count": 152
+}
