@@ -11,11 +11,13 @@ effective bandwidth and kernel runtime on GPU workloads.
 
 ## Build
 
-From repository root:
+From the Week 2 directory:
 
 ```bash
+cd week02-memory-tiling
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake --build build -j --target week02_benchmark
+./build/week02_benchmark
 ```
 
 ## Week 2 layout

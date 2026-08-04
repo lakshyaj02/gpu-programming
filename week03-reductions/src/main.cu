@@ -41,9 +41,17 @@ int main(int argc, char **argv) {
     }
 
     const std::vector<std::size_t> sizes = {
+        1,
+        17,
+        31,
+        32,
+        33,
+        1'000,
+        1'000'003,
         1u << 20,   // ~4 MiB
         1u << 22,   // ~16 MiB
         1u << 24,   // ~64 MiB
+        16'777'219,
         1u << 26,   // ~256 MiB
     };
 

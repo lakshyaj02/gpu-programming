@@ -35,8 +35,9 @@ mkdir -p "$results_dir"
 timestamp="$(date +%Y%m%d_%H%M%S)"
 
 printf '%s\n' 'Configuring and building week02_benchmark...'
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j --target week02_benchmark
+build_dir="week02-memory-tiling/build"
+cmake -S week02-memory-tiling -B "$build_dir" -DCMAKE_BUILD_TYPE=Release
+cmake --build "$build_dir" -j --target week02_benchmark
 
 printf '%s\n' 'Running native CUDA benchmark harness...'
 python3 week02-memory-tiling/python/benchmark_cuda.py \

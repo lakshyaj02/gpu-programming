@@ -77,7 +77,20 @@ def main() -> None:
 
     reduction_rows: list[dict[str, str]] = []
 
-    sizes = [1 << 20, 1 << 22, 1 << 24, 1 << 26]
+    sizes = [
+        1,
+        17,
+        31,
+        32,
+        33,
+        1_000,
+        1_000_003,
+        1 << 20,
+        1 << 22,
+        1 << 24,
+        16_777_219,
+        1 << 26,
+    ]
 
     for size in sizes:
         data = torch.arange(size, device=device, dtype=torch.float32) * 0.25

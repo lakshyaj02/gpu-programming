@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_EXECUTABLE = PROJECT_ROOT / "build" / "week01_benchmark"
+DEFAULT_EXECUTABLE = PROJECT_ROOT / "week01-vector-ops" / "build" / "week01_benchmark"
 DEFAULT_CSV = PROJECT_ROOT / "week01-vector-ops" / "results" / "raw" / "cuda_timings.csv"
 DEFAULT_PYTORCH_CSV = (
     PROJECT_ROOT / "week01-vector-ops" / "results" / "raw" / "pytorch_timings.csv"

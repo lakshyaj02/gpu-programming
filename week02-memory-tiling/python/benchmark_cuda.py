@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_EXECUTABLE = PROJECT_ROOT / "build" / "week02_benchmark"
+DEFAULT_EXECUTABLE = PROJECT_ROOT / "week02-memory-tiling" / "build" / "week02_benchmark"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "week02-memory-tiling" / "results" / "raw_out"
 
 COPY_HEADER = "copy_pattern,size,bytes,stride,iterations,avg_kernel_ms,min_kernel_ms,effective_gbps,correct"

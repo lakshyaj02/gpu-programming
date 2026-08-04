@@ -15,6 +15,7 @@ Implement and benchmark parallel reduction strategies on the GPU, comparing atom
 ## Building
 
 ```bash
+cd week03-reductions
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j --target week03_benchmark
 ```
@@ -26,8 +27,7 @@ cmake --build build -j --target week03_benchmark
 ./build/week03_benchmark [iterations] [warmup_iterations]
 
 # PyTorch baseline
-python3 week03-reductions/python/benchmark_pytorch.py \
-    --output-dir week03-reductions/results/raw
+python3 python/benchmark_pytorch.py --output-dir results/raw
 ```
 
 ## Results

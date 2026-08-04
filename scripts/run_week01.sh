@@ -31,8 +31,9 @@ if [[ " $* " != *" --skip-pytorch "* ]]; then
 fi
 
 printf '%s\n' 'Building native CUDA benchmark...'
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+build_dir="week01-vector-ops/build"
+cmake -S week01-vector-ops -B "$build_dir" -DCMAKE_BUILD_TYPE=Release
+cmake --build "$build_dir" -j --target week01_benchmark
 
 printf '%s\n' 'Running native CUDA and PyTorch benchmarks...'
 if [[ "$run_all_ops" == true ]]; then

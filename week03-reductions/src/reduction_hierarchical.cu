@@ -44,7 +44,11 @@ __global__ void hierarchical_phase2_kernel(float *result, const float *partials,
     extern __shared__ float sdata[];
 
     const std::size_t tid = threadIdx.x;
-    sdata[tid] = (tid < count) ? partials[tid] : 0.0f;
+    float threadSum = 0.0f;
+    for (std::size_t i = tid; i < count; i += blockDim.x) {
+        threadSum += partials[i];
+    }
+    sdata[tid] = threadSum;
     __syncthreads();
 
     for (std::size_t stride = blockDim.x / 2; stride > 0; stride >>= 1) {

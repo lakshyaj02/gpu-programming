@@ -1,8 +1,9 @@
 ## Build
 
 ```bash
+cd week01-vector-ops
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake --build build -j --target week01_benchmark
 ./build/week01_benchmark
 ```
 

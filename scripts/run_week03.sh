@@ -41,8 +41,9 @@ mkdir -p "$results_dir"
 timestamp="$(date +%Y%m%d_%H%M%S)"
 
 printf '%s\n' 'Configuring and building week03_benchmark...'
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j --target week03_benchmark
+build_dir="week03-reductions/build"
+cmake -S week03-reductions -B "$build_dir" -DCMAKE_BUILD_TYPE=Release
+cmake --build "$build_dir" -j --target week03_benchmark
 
 cuda_csv="$results_dir/cuda_timings_reduction_${timestamp}.csv"
 
@@ -51,7 +52,7 @@ cuda_positional_args=()
 [[ -n "$iterations_arg" ]] && cuda_positional_args+=("$iterations_arg")
 [[ -n "$warmup_arg" ]] && cuda_positional_args+=("$warmup_arg")
 
-./build/week03_benchmark "${cuda_positional_args[@]+"${cuda_positional_args[@]}"}" \
+"$build_dir/week03_benchmark" "${cuda_positional_args[@]+"${cuda_positional_args[@]}"}" \
 	"${raw_args[@]+"${raw_args[@]}"}" \
 	> "$cuda_csv"
 
