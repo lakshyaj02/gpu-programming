@@ -8,3 +8,4 @@ project(
 add_subdirectory(week01-vector-ops)
 add_subdirectory(week02-memory-tiling)
 add_subdirectory(week03-reductions)
+add_subdirectory(week04-gemm)
