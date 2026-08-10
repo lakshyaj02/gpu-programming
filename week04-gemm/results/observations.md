@@ -80,16 +80,22 @@ Higher register usage can reduce the number of warps on an SM. If register deman
 
 Coarsening also reduces the number of threads used to cover an output tile. That is beneficial until there are too few active warps to hide memory and instruction latency. It particularly hurts when:
 
+1. The coarsening factor us too high.
+2. The kernel already has high register pressure.
+3. Small matrices do not provide enough blocks to occupy all SMs.
+4. Irregular boundaries leave some of each thread's outputs inactive.
+5. Reduced occupancy is not offset by enough register and data reuse.
+
 - Is the naive kernel memory-bound or compute-bound?
 
 For 8 bytes of memory moved in the inner loop (4 bytes from $A$ and 4 bytes from $B$), the computation done is 2 FLOPs. The approximate arithemtic intensity is $$ AI_{native} \approx \frac{2\ FPLOs}{8\ bytes} = 0.25 FLOP/byte$$
 This is too little computation per byte to approac the GPU's FP32 compute ceiling. Repeated $A$ broadcasts and cache hits can reduce actual DRAM traffic, but the kernel still issues redundant load instructions and has limited data reuse under explicit software control.
 
-Thus, it is more precise to describe the naive kernel as memory-access and. memory-latency bound, rather than ourely DRAM-bandwidth bound.
+Thus, it is more precise to describe the naive kernel as memory-access and memory-latency bound, rather than purely DRAM-bandwidth bound.
 
 - Does the tiled kernel move closer to the compute roof?
 
-Yes. Shared-memory tiling increases arithmetic intensity by reusing each globally loaded value across multiple threads. For a $t\times T$ tile, the block performs approximately $2T^3$ FLOPs while loading $2T^2$ FP32 values, or $8T^2$ bytes. The arithmetic intensity is approximately : $$ AI_{tiles} \approx \frac{2T^3}{8T^2} = \frac{T}{4} FLOP/byte$$
+Yes. Shared-memory tiling increases arithmetic intensity by reusing each globally loaded value across multiple threads. For a $T\times T$ tile, the block performs approximately $2T^3$ FLOPs while loading $2T^2$ FP32 values, or $8T^2$ bytes. The arithmetic intensity is approximately : $$ AI_{tiles} \approx \frac{2T^3}{8T^2} = \frac{T}{4} FLOP/byte $$
 
 | Tile size	| Approximate arithmetic intensity |
 |---:|---|
@@ -112,11 +118,13 @@ The coarsened kernel’s 13,914 GFLOP/s and cuBLAS’s 66,481 GFLOP/s show subst
 Hierarchical tiling, Register blocking, Pipelining and double buffering, Architecture-specific instructions, Vectorized and asynchronous memory movement, Carefully tuned occupancy, Specialized kernel selection, Reduced synchronization and instruction overhead.
 
 - Which optimization produced the largest improvement?
+
 Thread coarsening produced the largest improvement among the custom-kernel optimizations at $4096^3$.
 Relative to tiled 32, thread coarsening increased throughput by: $$ \frac{13,913.679−8,687.397}{8,867.397} \times 100 \approx 60.2\% $$
 It also reduced execution time from 15.820 ms to 9.878 ms, a reduction of approximately 37.6%. The improvement comes from computing four outputs per thread, reusing operands across multiple register accumulators, and exposing more independent arithmetic work.
 
 - What is the custom kernel’s performance as a percentage of cuBLAS?
+
 The fastest custom kernel was the tile-32 thread-coarsened kernel:
 
 Custom kernel: 13,913.679 GFLOP/s
