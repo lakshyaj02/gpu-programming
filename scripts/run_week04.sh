@@ -55,7 +55,7 @@ if [[ "$iterations" == "0" ]]; then
 	exit 1
 fi
 
-for command in cmake nvcc; do
+for command in cmake nvcc python3; do
 	if ! command -v "$command" >/dev/null 2>&1; then
 		printf 'error: required command not found: %s\n' "$command" >&2
 		exit 1
@@ -83,6 +83,9 @@ fi
 
 printf 'CUDA timings written to %s\n' "$cuda_csv"
 printf 'Error report written to %s\n' "$error_log"
+
+printf '%s\n' 'Generating benchmark visualizations...'
+python3 week04-gemm/python/plot_results.py --timestamp "$timestamp"
 
 if [[ "$run_profile" == true ]]; then
 	printf '%s\n' 'Running focused Nsight Compute profile...'
