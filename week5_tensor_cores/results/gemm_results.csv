@@ -1,0 +1,1 @@
+kernel,precision,execution,M,N,K,iterations,avg_ms,min_ms,tflops,max_abs_error,max_rel_error,error_count,status
