@@ -13,14 +13,20 @@ template <typename StorageType, typename FragmentType, int tileK>
 __global__ void wmmaGemmKernel(const StorageType* matrixA, const StorageType* matrixB,
 							   float* matrixC, int m, int n, int k) {
 #if __CUDA_ARCH__ >= 800
-    const int warpId = (blockIdx.x * blockDim.x + threadIdx.x) / 32;
-    const int warpRow = warpId / (n / tileSize);
-    const int warpCol = warpId % (n / tileSize);
+	const int warpId = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
+	const int tileColumns = n / tileSize;
+	const int warpRow = warpId / tileColumns;
+	const int warpCol = warpId % tileColumns;
+	if (warpRow >= m / tileSize) {
+		return;
+	}
 
-    wmma::fragment<wmma::matrix_a, tileSize, tileSize, tileK, StorageType, wmma::row_major> aFrag;
-    wmma::fragment<wmma::matrix_b, tileSize, tileSize, tileK, StorageType, wmma::col_major> bFrag;
-    wmma::fragment<accumulator, tileSize, tileSize, tileK, float> cFrag;
-    wmma::fill_fragment(cFrag, 0.0f);
+	wmma::fragment<wmma::matrix_a, tileSize, tileSize, tileK,
+				   FragmentType, wmma::row_major> aFrag;
+	wmma::fragment<wmma::matrix_b, tileSize, tileSize, tileK,
+				   FragmentType, wmma::row_major> bFrag;
+	wmma::fragment<wmma::accumulator, tileSize, tileSize, tileK, float> cFrag;
+	wmma::fill_fragment(cFrag, 0.0f);
 
 	for (int tileIdx = 0; tileIdx < k / tileK; ++tileIdx) {
 		const int aRow = warpRow * tileSize;
@@ -36,8 +42,7 @@ __global__ void wmmaGemmKernel(const StorageType* matrixA, const StorageType* ma
 	const int cRow = warpRow * tileSize;
 	const int cCol = warpCol * tileSize;
 	wmma::store_matrix_sync(matrixC + cRow * n + cCol, cFrag, n, wmma::mem_row_major);
-	}
-    
+#endif
 }
 
 template <typename StorageType, typename FragmentType, int tileK>

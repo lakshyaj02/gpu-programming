@@ -34,7 +34,20 @@ From this directory:
 ```
 
 The script writes CSV output to `results/gemm_results.csv`. The precision demo is
-written to standard error so it does not contaminate the CSV stream.
+written to standard error so it does not contaminate the CSV stream. When NumPy
+and Matplotlib are available, it also writes these figures under `results/plots`:
+
+- `precision_performance.png`: throughput and latency by precision and GEMM shape
+- `relative_throughput.png`: throughput relative to the TF32 path
+
+To regenerate plots from the existing CSV without rerunning CUDA:
+
+```bash
+python3 python/plot_results.py
+```
+
+FP8 and FP4 are hatched and labeled as emulated because those rows execute
+through FP16 WMMA; their timing is not native FP8 or FP4 throughput.
 
 ## Notes
 
