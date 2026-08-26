@@ -8,10 +8,13 @@ cd "$project_root"
 kernel="${1:-warp}"
 hidden_size="${2:-4096}"
 block_size="${3:-256}"
-if [[ "$kernel" != "naive" && "$kernel" != "warp" && "$kernel" != "warp_half" ]]; then
-	printf 'error: kernel must be naive, warp, or warp_half\n' >&2
-	exit 1
-fi
+case "$kernel" in
+	naive|warp|float4|warp_half|half2|layernorm|welford|fused) ;;
+	*)
+		printf 'error: kernel must be naive, warp, float4, warp_half, half2, layernorm, welford, or fused\n' >&2
+		exit 1
+		;;
+esac
 for value in "$hidden_size" "$block_size"; do
 	if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
 		printf 'error: hidden size and block size must be positive integers\n' >&2
@@ -40,7 +43,7 @@ timestamp="$(date +%Y%m%d_%H%M%S)"
 profile_name="${kernel}_H${hidden_size}_block${block_size}_${timestamp}"
 report_base="$results_dir/$profile_name"
 csv_path="${report_base}.csv"
-printf 'Profiling %s RMSNorm H=%s block=%s...\n' "$kernel" "$hidden_size" "$block_size"
+printf 'Profiling %s normalization H=%s block=%s...\n' "$kernel" "$hidden_size" "$block_size"
 ncu \
 	--profile-from-start off \
 	--target-processes all \

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Create Week 6 RMSNorm plots from matching CUDA and PyTorch CSV files."""
+"""Create Week 6 normalization plots from matching CUDA and PyTorch CSV files."""
 
 from __future__ import annotations
 
@@ -12,7 +12,19 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR = PROJECT_ROOT / "week06-norm" / "results" / "raw"
 PLOTS_DIR = PROJECT_ROOT / "week06-norm" / "results" / "plots"
-COLORS = {"naive": "#d1495b", "warp": "#00798c", "warp_half": "#edae49", "pytorch": "#333333"}
+COLORS = {
+    "naive": "#d1495b",
+    "warp": "#00798c",
+    "float4": "#2a9d8f",
+    "warp_half": "#edae49",
+    "half2": "#f28e2b",
+    "layernorm": "#8f6f9f",
+    "welford": "#6f4e7c",
+    "fused": "#59a14f",
+    "pytorch_rmsnorm": "#333333",
+    "pytorch_layernorm": "#777777",
+    "pytorch_fused": "#b0b0b0",
+}
 
 
 def read_rows(path: Path) -> list[dict[str, str]]:
@@ -26,7 +38,7 @@ def read_rows(path: Path) -> list[dict[str, str]]:
 
 
 def label(row: dict[str, str]) -> str:
-    name = "PyTorch" if row["kernel"] == "pytorch" else row["kernel"].replace("_", " ").title()
+    name = row["kernel"].replace("pytorch_", "PyTorch ").replace("_", " ").title()
     return f"{name} {row['precision'].replace('float', 'FP')}"
 
 
@@ -61,7 +73,7 @@ def main() -> None:
     axes[1].set_ylabel("Effective bandwidth (GB/s)"); axes[1].set_title("Memory throughput")
     axes[2].set_yscale("log"); axes[2].set_ylabel("RMSE vs FP64 reference"); axes[2].set_title("Numerical precision")
     axes[1].legend(frameon=False, fontsize=9)
-    fig.suptitle("RMSNorm: custom CUDA kernels vs PyTorch")
+    fig.suptitle("Normalization kernels: custom CUDA vs PyTorch")
     fig.tight_layout()
     output = PLOTS_DIR / f"norm_comparison_{args.timestamp}.png"
     fig.savefig(output, dpi=200, bbox_inches="tight")

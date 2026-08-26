@@ -66,13 +66,13 @@ printf '%s\n' 'Configuring and building week06_benchmark...'
 cmake -S week06-norm -B "$build_dir" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$build_dir" -j --target week06_benchmark
 
-printf '%s\n' 'Running CUDA RMSNorm benchmark harness...'
+printf '%s\n' 'Running all CUDA normalization benchmark variants...'
 if ! "$build_dir/week06_benchmark" "$iterations" "$warmup_iterations" > "$cuda_csv" 2> "$error_log"; then
 	printf 'error: CUDA correctness checks failed; see %s\n' "$error_log" >&2
 	exit 1
 fi
 
-printf '%s\n' 'Running PyTorch RMSNorm benchmark...'
+printf '%s\n' 'Running PyTorch normalization baselines...'
 python3 week06-norm/python/benchmark_pytorch.py "$iterations" "$warmup_iterations" > "$pytorch_csv"
 printf 'CUDA timings written to %s\n' "$cuda_csv"
 printf 'PyTorch timings written to %s\n' "$pytorch_csv"

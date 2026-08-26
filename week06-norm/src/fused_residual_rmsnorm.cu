@@ -1,6 +1,8 @@
 #include "norm_kernels.cuh"
 
-const int kWarpSize = 32;
+namespace {
+
+constexpr int kWarpSize = 32;
 
 __device__ float warpReduceSum(float value){
     for(int offset = kWarpSize/2; offset > 0; offset /= 2){
@@ -21,7 +23,7 @@ __device__ float blockReduceSum(float value){
     __syncthreads();
 
     if (warp == 0){
-        value = lane < warp_count ? value : 0.0f;
+        value = lane < warp_count ? shared[lane] : 0.0f;
         value = warpReduceSum(value);
         if(lane == 0){
             shared[0] = value;
@@ -40,7 +42,7 @@ __global__ void fused_residual_rmsnorm_kernel(const float* __restrict__ input, c
     }
     square_sum = blockReduceSum(square_sum);
 
-    const float inverse_rms = rsqrtf(square_sum / N + 1e-8f);
+    const float inverse_rms = rsqrtf(square_sum / N + 1e-6f);
 
     for(int i = threadIdx.x; i < N; i += blockDim.x){
         float val = input[i] + residual[i];
@@ -48,6 +50,12 @@ __global__ void fused_residual_rmsnorm_kernel(const float* __restrict__ input, c
     }
 }
 
+}  // namespace
+
 void launch_fused_residual_rmsnorm(const float* input, const float* residual, const float* gamma, float* output, int N, int threads_per_block) {
+    if (N <= 0 || threads_per_block < kWarpSize || threads_per_block > 1024 ||
+        threads_per_block % kWarpSize != 0) {
+        return;
+    }
     fused_residual_rmsnorm_kernel<<<1, threads_per_block>>>(input, residual, gamma, output, N);
 }

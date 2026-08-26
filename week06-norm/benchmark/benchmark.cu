@@ -29,6 +29,41 @@ std::vector<float> referenceRmsnorm(const std::vector<float>& input,
     return output;
 }
 
+std::vector<float> referenceLayernorm(const std::vector<float>& input) {
+    double sum = 0.0;
+    for (float value : input) sum += value;
+    const double mean = sum / input.size();
+    double squaredDifferenceSum = 0.0;
+    for (float value : input) {
+        const double difference = value - mean;
+        squaredDifferenceSum += difference * difference;
+    }
+    const double inverseStandardDeviation =
+        1.0 / std::sqrt(squaredDifferenceSum / input.size() + 1.0e-5);
+    std::vector<float> output(input.size());
+    for (std::size_t index = 0; index < input.size(); ++index) {
+        output[index] = static_cast<float>((input[index] - mean) * inverseStandardDeviation);
+    }
+    return output;
+}
+
+std::vector<float> referenceFusedResidualRmsnorm(const std::vector<float>& input,
+                                                 const std::vector<float>& residual,
+                                                 const std::vector<float>& gamma) {
+    double squareSum = 0.0;
+    for (std::size_t index = 0; index < input.size(); ++index) {
+        const double value = static_cast<double>(input[index]) + residual[index];
+        squareSum += value * value;
+    }
+    const double inverseRms = 1.0 / std::sqrt(squareSum / input.size() + 1.0e-6);
+    std::vector<float> output(input.size());
+    for (std::size_t index = 0; index < input.size(); ++index) {
+        output[index] = static_cast<float>((input[index] + residual[index]) *
+                                           inverseRms * gamma[index]);
+    }
+    return output;
+}
+
 struct ErrorMetrics {
     float maxAbs = 0.0f;
     float maxRel = 0.0f;
@@ -102,38 +137,50 @@ int main(int argc, char** argv) {
         std::uniform_real_distribution<float> inputDistribution(-2.0f, 2.0f);
         std::uniform_real_distribution<float> gammaDistribution(0.5f, 1.5f);
         std::uniform_real_distribution<float> betaDistribution(-0.25f, 0.25f);
-        std::vector<float> input(hiddenSize), gamma(hiddenSize), beta(hiddenSize);
+        std::vector<float> input(hiddenSize), residual(hiddenSize), gamma(hiddenSize), beta(hiddenSize);
         for (int index = 0; index < hiddenSize; ++index) {
             input[index] = inputDistribution(generator);
+            residual[index] = inputDistribution(generator);
             gamma[index] = gammaDistribution(generator);
             beta[index] = betaDistribution(generator);
         }
-        const std::vector<float> reference = referenceRmsnorm(input, gamma, beta);
+        const std::vector<float> rmsnormReference = referenceRmsnorm(input, gamma, beta);
+        const std::vector<float> layernormReference = referenceLayernorm(input);
+        const std::vector<float> fusedReference =
+            referenceFusedResidualRmsnorm(input, residual, gamma);
 
         const std::size_t floatBytes = static_cast<std::size_t>(hiddenSize) * sizeof(float);
-        float *deviceInput = nullptr, *deviceOutput = nullptr, *deviceGamma = nullptr, *deviceBeta = nullptr;
+        float *deviceInput = nullptr, *deviceResidual = nullptr, *deviceOutput = nullptr;
+        float *deviceGamma = nullptr, *deviceBeta = nullptr;
         checkCuda(cudaMalloc(&deviceInput, floatBytes), "allocate float input");
+        checkCuda(cudaMalloc(&deviceResidual, floatBytes), "allocate float residual");
         checkCuda(cudaMalloc(&deviceOutput, floatBytes), "allocate float output");
         checkCuda(cudaMalloc(&deviceGamma, floatBytes), "allocate float gamma");
         checkCuda(cudaMalloc(&deviceBeta, floatBytes), "allocate float beta");
         checkCuda(cudaMemcpy(deviceInput, input.data(), floatBytes, cudaMemcpyHostToDevice), "copy float input");
+        checkCuda(cudaMemcpy(deviceResidual, residual.data(), floatBytes, cudaMemcpyHostToDevice), "copy float residual");
         checkCuda(cudaMemcpy(deviceGamma, gamma.data(), floatBytes, cudaMemcpyHostToDevice), "copy float gamma");
         checkCuda(cudaMemcpy(deviceBeta, beta.data(), floatBytes, cudaMemcpyHostToDevice), "copy float beta");
 
-        auto reportFloat = [&](const char* kernel, auto launch) {
+        auto reportFloat = [&](const char* kernel, const std::vector<float>& expected,
+                               double transferredArrays, auto launch) {
             const auto [averageMs, minimumMs] = timeKernel(iterations, warmupIterations, launch);
             std::vector<float> result(hiddenSize);
             checkCuda(cudaMemcpy(result.data(), deviceOutput, floatBytes, cudaMemcpyDeviceToHost), "copy float output");
-            const ErrorMetrics error = measureError(result, reference, floatAtol, floatRtol);
-            const double bandwidth = 4.0 * floatBytes / (averageMs * 1.0e6);
+            const ErrorMetrics error = measureError(result, expected, floatAtol, floatRtol);
+            const double bandwidth = transferredArrays * floatBytes / (averageMs * 1.0e6);
             const bool passed = error.errorCount == 0;
             std::printf("%s,float32,%d,%d,%d,%.6f,%.6f,%.3f,%.6e,%.6e,%.6e,%zu,%s\n",
                         kernel, hiddenSize, blockSize, iterations, averageMs, minimumMs, bandwidth,
                         error.maxAbs, error.maxRel, error.rmse, error.errorCount, passed ? "PASS" : "FAIL");
             if (!passed) ++failedRuns;
         };
-        reportFloat("naive", [&] { launch_naive_rmsnorm(deviceInput, deviceOutput, deviceGamma, deviceBeta, hiddenSize, blockSize); });
-        reportFloat("warp", [&] { launch_warp_rmsnorm(deviceInput, deviceOutput, deviceGamma, deviceBeta, hiddenSize, blockSize); });
+        reportFloat("naive", rmsnormReference, 4.0, [&] { launch_naive_rmsnorm(deviceInput, deviceOutput, deviceGamma, deviceBeta, hiddenSize, blockSize); });
+        reportFloat("warp", rmsnormReference, 4.0, [&] { launch_warp_rmsnorm(deviceInput, deviceOutput, deviceGamma, deviceBeta, hiddenSize, blockSize); });
+        reportFloat("float4", rmsnormReference, 4.0, [&] { launch_vectorized_rmsnorm(deviceInput, deviceOutput, deviceGamma, deviceBeta, hiddenSize, blockSize); });
+        reportFloat("layernorm", layernormReference, 3.0, [&] { launch_layernorm(deviceInput, deviceOutput, hiddenSize, blockSize); });
+        reportFloat("welford", layernormReference, 2.0, [&] { launch_welford_layernorm(deviceInput, deviceOutput, hiddenSize, blockSize); });
+        reportFloat("fused", fusedReference, 4.0, [&] { launch_fused_residual_rmsnorm(deviceInput, deviceResidual, deviceGamma, deviceOutput, hiddenSize, blockSize); });
 
         std::vector<half> inputHalf(hiddenSize), gammaHalf(hiddenSize), betaHalf(hiddenSize), outputHalf(hiddenSize);
         for (int index = 0; index < hiddenSize; ++index) {
@@ -150,21 +197,29 @@ int main(int argc, char** argv) {
         checkCuda(cudaMemcpy(deviceInputHalf, inputHalf.data(), halfBytes, cudaMemcpyHostToDevice), "copy half input");
         checkCuda(cudaMemcpy(deviceGammaHalf, gammaHalf.data(), halfBytes, cudaMemcpyHostToDevice), "copy half gamma");
         checkCuda(cudaMemcpy(deviceBetaHalf, betaHalf.data(), halfBytes, cudaMemcpyHostToDevice), "copy half beta");
-        const auto [averageMs, minimumMs] = timeKernel(iterations, warmupIterations, [&] {
-            launch_warp_rmsnorm_half(deviceInputHalf, deviceOutputHalf, deviceGammaHalf, deviceBetaHalf, hiddenSize, blockSize);
-        });
-        checkCuda(cudaMemcpy(outputHalf.data(), deviceOutputHalf, halfBytes, cudaMemcpyDeviceToHost), "copy half output");
         std::vector<float> halfResult(hiddenSize);
-        std::transform(outputHalf.begin(), outputHalf.end(), halfResult.begin(), [](half value) { return __half2float(value); });
-        const ErrorMetrics error = measureError(halfResult, reference, halfAtol, halfRtol);
-        const double bandwidth = 4.0 * halfBytes / (averageMs * 1.0e6);
-        const bool passed = error.errorCount == 0;
-        std::printf("warp_half,float16,%d,%d,%d,%.6f,%.6f,%.3f,%.6e,%.6e,%.6e,%zu,%s\n",
-                    hiddenSize, blockSize, iterations, averageMs, minimumMs, bandwidth,
-                    error.maxAbs, error.maxRel, error.rmse, error.errorCount, passed ? "PASS" : "FAIL");
-        if (!passed) ++failedRuns;
+        auto reportHalf = [&](const char* kernel, auto launch) {
+            const auto [averageMs, minimumMs] = timeKernel(iterations, warmupIterations, launch);
+            checkCuda(cudaMemcpy(outputHalf.data(), deviceOutputHalf, halfBytes, cudaMemcpyDeviceToHost), "copy half output");
+            std::transform(outputHalf.begin(), outputHalf.end(), halfResult.begin(), [](half value) { return __half2float(value); });
+            const ErrorMetrics error = measureError(halfResult, rmsnormReference, halfAtol, halfRtol);
+            const double bandwidth = 4.0 * halfBytes / (averageMs * 1.0e6);
+            const bool passed = error.errorCount == 0;
+            std::printf("%s,float16,%d,%d,%d,%.6f,%.6f,%.3f,%.6e,%.6e,%.6e,%zu,%s\n",
+                        kernel, hiddenSize, blockSize, iterations, averageMs, minimumMs, bandwidth,
+                        error.maxAbs, error.maxRel, error.rmse, error.errorCount, passed ? "PASS" : "FAIL");
+            if (!passed) ++failedRuns;
+        };
+        reportHalf("warp_half", [&] {
+            launch_warp_rmsnorm_half(deviceInputHalf, deviceOutputHalf, deviceGammaHalf,
+                                     deviceBetaHalf, hiddenSize, blockSize);
+        });
+        reportHalf("half2", [&] {
+            launch_vectorized_rmsnorm_half2(deviceInputHalf, deviceOutputHalf, deviceGammaHalf,
+                                            deviceBetaHalf, hiddenSize, blockSize);
+        });
 
-        cudaFree(deviceInput); cudaFree(deviceOutput); cudaFree(deviceGamma); cudaFree(deviceBeta);
+        cudaFree(deviceInput); cudaFree(deviceResidual); cudaFree(deviceOutput); cudaFree(deviceGamma); cudaFree(deviceBeta);
         cudaFree(deviceInputHalf); cudaFree(deviceOutputHalf); cudaFree(deviceGammaHalf); cudaFree(deviceBetaHalf);
     }
 

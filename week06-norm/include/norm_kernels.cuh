@@ -23,3 +23,7 @@ void launch_layernorm(const float* input, float* output, int hidden_size,
 
 void launch_welford_layernorm(const float* input, float* output, int hidden_size,
 						  int block_size = 256);
+
+void launch_fused_residual_rmsnorm(const float* input, const float* residual,
+								   const float* gamma, float* output, int hidden_size,
+								   int block_size = 256);

@@ -18,6 +18,7 @@ add_executable(
     src/rmsnorm_half.cu
     src/rmsnorm_vectorized.cu
     src/layernorm.cu
+    src/fused_residual_rmsnorm.cu
 )
 
 add_executable(
@@ -27,15 +28,19 @@ add_executable(
     src/rmsnorm_warp.cu
     src/rmsnorm_half.cu
     src/rmsnorm_vectorized.cu
+    src/layernorm.cu
+    src/fused_residual_rmsnorm.cu
 )
 
 add_executable(
     week06_norm_test
     src/main.cu
+    src/rmsnorm_naive.cu
     src/rmsnorm_warp.cu
     src/rmsnorm_half.cu
     src/rmsnorm_vectorized.cu
     src/layernorm.cu
+    src/fused_residual_rmsnorm.cu
 )
 
 foreach(target week06_benchmark week06_profile week06_norm_test)

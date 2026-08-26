@@ -55,6 +55,23 @@ std::vector<float> layernormReference(const std::vector<float>& input) {
 	return output;
 }
 
+std::vector<float> fusedResidualRmsnormReference(const std::vector<float>& input,
+												 const std::vector<float>& residual,
+												 const std::vector<float>& gamma) {
+	double square_sum = 0.0;
+	for (std::size_t index = 0; index < input.size(); ++index) {
+		const double value = static_cast<double>(input[index]) + residual[index];
+		square_sum += value * value;
+	}
+	const double inverse_rms = 1.0 / std::sqrt(square_sum / input.size() + 1e-6);
+	std::vector<float> output(input.size());
+	for (std::size_t index = 0; index < input.size(); ++index) {
+		output[index] = static_cast<float>((input[index] + residual[index]) *
+										 inverse_rms * gamma[index]);
+	}
+	return output;
+}
+
 struct ErrorMetrics {
 	float max_absolute = 0.0f;
 	float max_relative = 0.0f;
@@ -115,15 +132,19 @@ void runSize(int hidden_size) {
 	std::uniform_real_distribution<float> beta_distribution(-0.25f, 0.25f);
 
 	std::vector<float> input(hidden_size);
+	std::vector<float> residual(hidden_size);
 	std::vector<float> gamma(hidden_size);
 	std::vector<float> beta(hidden_size);
 	for (int index = 0; index < hidden_size; ++index) {
 		input[index] = input_distribution(generator);
+		residual[index] = input_distribution(generator);
 		gamma[index] = gamma_distribution(generator);
 		beta[index] = beta_distribution(generator);
 	}
 	const std::vector<float> reference = rmsnormReference(input, gamma, beta);
 	const std::vector<float> layernorm_reference = layernormReference(input);
+	const std::vector<float> fused_reference =
+		fusedResidualRmsnormReference(input, residual, gamma);
 
 	std::vector<half> input_half(hidden_size);
 	std::vector<half> gamma_half(hidden_size);
@@ -134,11 +155,12 @@ void runSize(int hidden_size) {
 		beta_half[index] = __float2half(beta[index]);
 	}
 
-	float *device_input, *device_output, *device_gamma, *device_beta;
+	float *device_input, *device_residual, *device_output, *device_gamma, *device_beta;
 	half *device_input_half, *device_output_half, *device_gamma_half, *device_beta_half;
 	const std::size_t float_bytes = hidden_size * sizeof(float);
 	const std::size_t half_bytes = hidden_size * sizeof(half);
 	cudaCheck(cudaMalloc(&device_input, float_bytes), "cudaMalloc float input");
+	cudaCheck(cudaMalloc(&device_residual, float_bytes), "cudaMalloc float residual");
 	cudaCheck(cudaMalloc(&device_output, float_bytes), "cudaMalloc float output");
 	cudaCheck(cudaMalloc(&device_gamma, float_bytes), "cudaMalloc float gamma");
 	cudaCheck(cudaMalloc(&device_beta, float_bytes), "cudaMalloc float beta");
@@ -148,6 +170,7 @@ void runSize(int hidden_size) {
 	cudaCheck(cudaMalloc(&device_beta_half, half_bytes), "cudaMalloc half beta");
 
 	cudaCheck(cudaMemcpy(device_input, input.data(), float_bytes, cudaMemcpyHostToDevice), "copy float input");
+	cudaCheck(cudaMemcpy(device_residual, residual.data(), float_bytes, cudaMemcpyHostToDevice), "copy float residual");
 	cudaCheck(cudaMemcpy(device_gamma, gamma.data(), float_bytes, cudaMemcpyHostToDevice), "copy float gamma");
 	cudaCheck(cudaMemcpy(device_beta, beta.data(), float_bytes, cudaMemcpyHostToDevice), "copy float beta");
 	cudaCheck(cudaMemcpy(device_input_half, input_half.data(), half_bytes, cudaMemcpyHostToDevice), "copy half input");
@@ -176,6 +199,10 @@ void runSize(int hidden_size) {
 					measureError(half_output_float, reference));
 	};
 
+	run_float("naive", [&] {
+		launch_naive_rmsnorm(device_input, device_output, device_gamma, device_beta,
+							 hidden_size, 256);
+	});
 	run_float("warp", [&] {
 		launch_warp_rmsnorm(device_input, device_output, device_gamma, device_beta,
 							hidden_size, 256);
@@ -209,7 +236,18 @@ void runSize(int hidden_size) {
 		launch_welford_layernorm(device_input, device_output, hidden_size, 256);
 	});
 
+	const float fused_milliseconds = benchmarkKernel([&] {
+		launch_fused_residual_rmsnorm(device_input, device_residual, device_gamma,
+									 device_output, hidden_size, 256);
+	});
+	cudaCheck(cudaGetLastError(), "fused_residual");
+	cudaCheck(cudaMemcpy(float_output.data(), device_output, float_bytes,
+						 cudaMemcpyDeviceToHost), "copy fused residual output");
+	printResult("fused", hidden_size, fused_milliseconds,
+				measureError(float_output, fused_reference));
+
 	cudaFree(device_input);
+	cudaFree(device_residual);
 	cudaFree(device_output);
 	cudaFree(device_gamma);
 	cudaFree(device_beta);
