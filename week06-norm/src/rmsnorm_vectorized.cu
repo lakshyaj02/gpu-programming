@@ -1,4 +1,5 @@
 #include "norm_kernels.cuh"
+#include "common.cuh"
 
 namespace {
 
@@ -103,14 +104,15 @@ __global__ void vectorized_rmsnorm_half2_kernel(const half* __restrict__ input, 
 
     square_sum = blockReduceSum(square_sum);
     const float inverse_rms = rsqrtf(square_sum / hidden_size + 1e-6f);
-    const half2 inverse_rms2 = __float2half2_rn(inverse_rms);
 
     for(int i = threadIdx.x; i < pairCount; i += blockDim.x){
-        const half2 values = input2[i];
-        const half2 gammas = gamma2[i];
-        const half2 betas = beta2[i];
+        const float2 values = __half22float2(input2[i]);
+        const float2 gammas = __half22float2(gamma2[i]);
+        const float2 betas = __half22float2(beta2[i]);
 
-        output2[i] = __hfma2(__hmul2(values, inverse_rms2), gammas, betas);
+        output2[i] = __floats2half2_rn(
+            values.x * inverse_rms * gammas.x + betas.x,
+            values.y * inverse_rms * gammas.y + betas.y);
     }
 
     if((hidden_size & 1) != 0 && threadIdx.x == 0){
@@ -130,7 +132,7 @@ void launch_vectorized_rmsnorm(const float* input, float* output, const float* g
         return;
     }
     vectorized_rmsnorm_kernel<<<1, block_size>>>(input, output, gamma, beta, hidden_size);
-    cudaDeviceSynchronize();
+    CUDA_CHECK(cudaGetLastError());
 }
 
 void launch_vectorized_rmsnorm_half2(const half* input, half* output, const half* gamma, const half* beta, int hidden_size, int block_size){
@@ -141,5 +143,5 @@ void launch_vectorized_rmsnorm_half2(const half* input, half* output, const half
         return;
     }
     vectorized_rmsnorm_half2_kernel<<<1, block_size>>>(input, output, gamma, beta, hidden_size);
-    cudaDeviceSynchronize();
+    CUDA_CHECK(cudaGetLastError());
 }

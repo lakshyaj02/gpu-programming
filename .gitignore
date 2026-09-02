@@ -15,6 +15,7 @@ week*/results/plots/*.png
 !week03-reductions/results/plots/*.png
 !week04-gemm/results/plots/*.png
 !week05-tensor-cores/results/plots/*.png
+!week06-norm/results/plots/*.png
 
 .nsys-rep
 *.ncu-rep

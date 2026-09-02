@@ -1,4 +1,5 @@
 #include "norm_kernels.cuh"
+#include "common.cuh"
 
 __global__ void naive_rmsnorm_kernel(const float* __restrict__ input, float* __restrict__ output, const float* __restrict__ gamma, const float* __restrict__ beta, int hidden_size){
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -18,5 +19,5 @@ void launch_naive_rmsnorm(const float* input, float* output, const float* gamma,
     dim3 grid(grid_size);
     dim3 block(block_size);
     naive_rmsnorm_kernel<<<grid, block>>>(input, output, gamma, beta, hidden_size);
-    cudaDeviceSynchronize();
+    CUDA_CHECK(cudaGetLastError());
 }

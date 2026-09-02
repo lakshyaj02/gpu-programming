@@ -1,4 +1,5 @@
 #include "norm_kernels.cuh"
+#include "common.cuh"
 
 namespace {
 
@@ -58,4 +59,5 @@ void launch_fused_residual_rmsnorm(const float* input, const float* residual, co
         return;
     }
     fused_residual_rmsnorm_kernel<<<1, threads_per_block>>>(input, residual, gamma, output, N);
+    CUDA_CHECK(cudaGetLastError());
 }

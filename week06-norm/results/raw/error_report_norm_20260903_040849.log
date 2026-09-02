@@ -1,0 +1,1 @@
+ERROR REPORT: all runs passed float(atol=1.0e-04, rtol=1.0e-04), half(atol=5.0e-03, rtol=5.0e-03)

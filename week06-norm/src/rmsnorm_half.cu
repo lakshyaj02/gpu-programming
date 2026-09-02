@@ -1,4 +1,5 @@
 #include "norm_kernels.cuh"
+#include "common.cuh"
 
 namespace {
 
@@ -50,5 +51,5 @@ void launch_warp_rmsnorm_half(const half* input, half* output, const half* gamma
         return;
     }
     warp_rmsnorm_kernel_half<<<1, block_size>>>(input, output, gamma, beta, hidden_size);
-    cudaDeviceSynchronize();
+    CUDA_CHECK(cudaGetLastError());
 }

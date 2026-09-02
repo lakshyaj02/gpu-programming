@@ -1,4 +1,5 @@
 #include "norm_kernels.cuh"
+#include "common.cuh"
 
 __global__ void layernorm_kernel(const float* input, float* output, int N) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
@@ -51,9 +52,11 @@ __global__ void welford_layernorm_kernel(const float* input, float* output, int 
 void launch_layernorm(const float* input, float* output, int N, int threads_per_block) {
     int blocks = (N + threads_per_block - 1) / threads_per_block;
     layernorm_kernel<<<blocks, threads_per_block>>>(input, output, N);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 void launch_welford_layernorm(const float* input, float* output, int N, int threads_per_block) {
     int blocks = (N + threads_per_block - 1) / threads_per_block;
     welford_layernorm_kernel<<<blocks, threads_per_block>>>(input, output, N);
+    CUDA_CHECK(cudaGetLastError());
 }
