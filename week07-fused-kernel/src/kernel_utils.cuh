@@ -2,6 +2,7 @@
 
 #include <cuda_runtime.h>
 
+#include <cfloat>
 #include <cstdio>
 #include <cstdlib>
 
@@ -57,7 +58,7 @@ __device__ inline float blockMax(float value) {
     value = warpMax(value);
     if (lane == 0) partial[warp] = value;
     __syncthreads();
-    value = threadIdx.x < blockDim.x / kWarpSize ? partial[lane] : -CUDART_INF_F;
+    value = threadIdx.x < blockDim.x / kWarpSize ? partial[lane] : -FLT_MAX;
     if (warp == 0) value = warpMax(value);
     if (threadIdx.x == 0) partial[0] = value;
     __syncthreads();

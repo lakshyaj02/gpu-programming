@@ -7,7 +7,7 @@ namespace {
 
 __global__ void rowMaxKernel(const float* input, float* maxima, int columns) {
     const int row_offset = blockIdx.x * columns;
-    float maximum = -CUDART_INF_F;
+    float maximum = -FLT_MAX;
     for (int column = threadIdx.x; column < columns; column += blockDim.x) {
         maximum = fmaxf(maximum, input[row_offset + column]);
     }
@@ -39,7 +39,7 @@ __global__ void divideByRowKernel(const float* input, const float* sums, float* 
 
 __global__ void softmaxKernel(const float* input, float* output, int columns) {
     const int row_offset = blockIdx.x * columns;
-    float maximum = -CUDART_INF_F;
+    float maximum = -FLT_MAX;
     for (int column = threadIdx.x; column < columns; column += blockDim.x) {
         maximum = fmaxf(maximum, input[row_offset + column]);
     }
