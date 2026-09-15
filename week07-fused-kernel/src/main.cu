@@ -16,6 +16,25 @@ void checkCuda(cudaError_t status, const char* operation) {
     }
 }
 
+void requireCudaDevice() {
+    int device_count = 0;
+    const cudaError_t status = cudaGetDeviceCount(&device_count);
+    if (status != cudaSuccess) {
+        std::fprintf(stderr, "CUDA initialization failed (%d): %s\n",
+                     static_cast<int>(status), cudaGetErrorString(status));
+        if (status == cudaErrorSystemNotReady) {
+            std::fprintf(stderr,
+                         "Check GPU allocation, driver state, container GPU access, and NVIDIA Fabric Manager.\n");
+        }
+        std::exit(EXIT_FAILURE);
+    }
+    if (device_count == 0) {
+        std::fprintf(stderr, "CUDA initialization failed: no CUDA-capable device is visible\n");
+        std::exit(EXIT_FAILURE);
+    }
+    checkCuda(cudaSetDevice(0), "select CUDA device 0");
+}
+
 float gelu(float value) {
     return 0.5f * value * (1.0f + std::tanh(0.7978845608f *
            (value + 0.044715f * value * value * value)));
@@ -35,6 +54,8 @@ bool check(const char* name, const std::vector<float>& actual,
 }  // namespace
 
 int main() {
+    requireCudaDevice();
+
     constexpr int rows = 7;
     constexpr int columns = 513;
     const int count = rows * columns;

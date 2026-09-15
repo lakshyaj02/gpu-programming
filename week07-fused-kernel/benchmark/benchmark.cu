@@ -14,6 +14,25 @@ void checkCuda(cudaError_t status, const char* operation) {
     }
 }
 
+void requireCudaDevice() {
+    int device_count = 0;
+    const cudaError_t status = cudaGetDeviceCount(&device_count);
+    if (status != cudaSuccess) {
+        std::fprintf(stderr, "CUDA initialization failed (%d): %s\n",
+                     static_cast<int>(status), cudaGetErrorString(status));
+        if (status == cudaErrorSystemNotReady) {
+            std::fprintf(stderr,
+                         "Check GPU allocation, driver state, container GPU access, and NVIDIA Fabric Manager.\n");
+        }
+        std::exit(EXIT_FAILURE);
+    }
+    if (device_count == 0) {
+        std::fprintf(stderr, "CUDA initialization failed: no CUDA-capable device is visible\n");
+        std::exit(EXIT_FAILURE);
+    }
+    checkCuda(cudaSetDevice(0), "select CUDA device 0");
+}
+
 template <typename Launch>
 float timeKernel(Launch launch, int warmups, int iterations) {
     for (int iteration = 0; iteration < warmups; ++iteration) launch();
@@ -54,6 +73,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "Usage: %s [iterations] [warmup_iterations]\n", argv[0]);
         return EXIT_FAILURE;
     }
+
+    requireCudaDevice();
 
     std::puts("assignment,operation,variant,rows,columns,elements,avg_ms,effective_bandwidth_gbps,speedup_vs_unfused");
     for (int rows : {1, 32, 256}) {
