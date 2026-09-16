@@ -10,7 +10,6 @@ __pycache__/
 *.out
 
 week*/results/raw/*.csv
-week*/results/plots/*.png
 !week02-memory-tiling/results/plots/*.png
 !week03-reductions/results/plots/*.png
 !week04-gemm/results/plots/*.png
