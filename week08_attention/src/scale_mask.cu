@@ -1,4 +1,5 @@
 #include "attention_kernels.cuh"
+#include "cuda_check.h"
 
 __global__ void scale_mask_kernel(float* scores, int m, int n, float scale,
                                   bool causal) {
@@ -16,9 +17,13 @@ __global__ void scale_mask_kernel(float* scores, int m, int n, float scale,
 
 void launch_scale_mask(float* scores, int m, int n, float scale, bool causal,
                        cudaStream_t stream) {
-    // TODO: Configure and launch scale_mask_kernel.
+    if (m <= 0 || n <= 0) {
+        return;
+    }
+
     const int TILE_DIM = 32;
     dim3 blockDim(TILE_DIM, TILE_DIM);
     dim3 gridDim((n + TILE_DIM - 1) / TILE_DIM, (m + TILE_DIM - 1) / TILE_DIM);
     scale_mask_kernel<<<gridDim, blockDim, 0, stream>>>(scores, m, n, scale, causal);
+    CUDA_CHECK(cudaGetLastError());
 }

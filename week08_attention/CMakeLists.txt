@@ -24,6 +24,7 @@ target_include_directories(
     week08_attention_kernels
     PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/include
+    ${CMAKE_SOURCE_DIR}/common
 )
 set_target_properties(
     week08_attention_kernels
@@ -36,3 +37,11 @@ set_target_properties(
     week08_attention_benchmark
     PROPERTIES CUDA_SEPARABLE_COMPILATION ON
 )
+
+include(CTest)
+if(BUILD_TESTING)
+    add_test(
+        NAME week08_attention_correctness
+        COMMAND week08_attention_benchmark 7 11 5 9 1
+    )
+endif()

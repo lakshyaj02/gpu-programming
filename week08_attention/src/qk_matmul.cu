@@ -1,4 +1,5 @@
 #include "attention_kernels.cuh"
+#include "cuda_check.h"
 
 const int TILE_DIM = 32;
 __global__ void qk_matmul_kernel(const float* q, const float* k, float* scores,
@@ -17,7 +18,12 @@ __global__ void qk_matmul_kernel(const float* q, const float* k, float* scores,
 
 void launch_qk_matmul(const float* q, const float* k, float* scores,
                       int m, int n, int d, cudaStream_t stream) {
+    if (m <= 0 || n <= 0) {
+        return;
+    }
+
     dim3 blockDim(TILE_DIM, TILE_DIM);
     dim3 gridDim((n + TILE_DIM - 1) / TILE_DIM, (m + TILE_DIM - 1) / TILE_DIM);
     qk_matmul_kernel<<<gridDim, blockDim, 0, stream>>>(q, k, scores, m, n, d);
+    CUDA_CHECK(cudaGetLastError());
 }

@@ -1,43 +1,39 @@
-def test_qk_transpose_correctness():
-    # TODO: Verify QK^T correctness without defining the reference here.
-    pass
+import os
+from pathlib import Path
+import subprocess
+
+import pytest
 
 
-def test_scaling_correctness():
-    # TODO: Verify attention scaling.
-    pass
+def _benchmark_path() -> Path:
+    root = Path(__file__).resolve().parents[2]
+    candidates = [
+        os.environ.get("ATTENTION_BENCHMARK"),
+        root / "build" / "week08_attention" / "week08_attention_benchmark",
+        root / "build" / "week08_attention_benchmark",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return Path(candidate)
+    pytest.skip("Build week08_attention_benchmark or set ATTENTION_BENCHMARK")
 
 
-def test_causal_masking_correctness():
-    # TODO: Verify causal masking.
-    pass
-
-
-def test_softmax_row_sums():
-    # TODO: Verify that each softmax row sums to one.
-    pass
-
-
-def test_softmax_numerical_correctness():
-    # TODO: Verify softmax against a future trusted reference.
-    pass
-
-
-def test_pv_correctness():
-    # TODO: Verify P x V correctness.
-    pass
-
-
-def test_full_attention_correctness():
-    # TODO: Verify the complete decomposed attention pipeline.
-    pass
-
-
-def test_several_matrix_sizes():
-    # TODO: Cover several M, N, D, and Dv combinations.
-    pass
-
-
-def test_non_multiple_of_block_size_dimensions():
-    # TODO: Cover dimensions that are not multiples of the chosen block size.
-    pass
+@pytest.mark.parametrize(
+    ("m", "n", "d", "dv", "causal"),
+    [
+        (8, 8, 4, 4, False),
+        (8, 8, 4, 4, True),
+        (7, 11, 5, 9, False),
+        (7, 11, 5, 9, True),
+        (33, 35, 17, 19, False),
+    ],
+)
+def test_attention_against_cpu_reference(m, n, d, dv, causal):
+    result = subprocess.run(
+        [str(_benchmark_path()), str(m), str(n), str(d), str(dv), str(int(causal))],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "correctness=PASS" in result.stdout
